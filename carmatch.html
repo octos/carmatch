@@ -1,0 +1,933 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Car Brand Country Match</title>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 5px;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 3px;
+        }
+        .game-area {
+            display: flex;
+            flex: 1;
+            gap: 5px;
+            height: calc(100vh - 80px);
+        }
+        #brands {
+            width: 25%;
+            background-color: #fff;
+            border: 1px solid #333;
+            border-radius: 5px;
+            padding: 3px;
+            display: flex;
+            flex-direction: column;
+        }
+        .tabs {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 3px;
+        }
+        .tab {
+            padding: 4px 8px;
+            font-size: 12px;
+            cursor: pointer;
+            background-color: #ccc;
+            border-radius: 3px;
+        }
+        .tab.active {
+            background-color: #333;
+            color: white;
+        }
+        .brand-list {
+            flex: 1;
+            overflow-y: auto;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+        .brand-list::-webkit-scrollbar {
+            display: none;
+        }
+        #map {
+            width: 75%;
+            background-color: #fff;
+            border: 1px solid #333;
+            border-radius: 5px;
+            padding: 3px;
+        }
+        .brand {
+            padding: 3px;
+            margin: 3px;
+            border-radius: 3px;
+            cursor: pointer;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            background-color: #ccc;
+            color: black;
+            position: relative;
+            font-size: 12px;
+        }
+        .brand.selected {
+            background-color: #999;
+        }
+        .brand img.logo {
+            width: 25px;
+            height: auto;
+            margin-right: 5px;
+        }
+        .brand img.flag {
+            width: 20px;
+            height: auto;
+            margin-left: 5px;
+        }
+        .correct {
+            display: none !important;
+        }
+        .incorrect {
+            background-color: #F44336 !important;
+        }
+        .feedback {
+            display: flex;
+            align-items: center;
+            position: absolute;
+            right: 5px;
+            font-size: 10px;
+            color: #333;
+            font-weight: bold;
+        }
+        #score {
+            font-size: 14px;
+            margin: 0;
+        }
+        #results {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 3px;
+            height: auto;
+        }
+        #correct-matches, #incorrect-matches {
+            width: 50%;
+            background-color: #fff;
+            border: 1px solid #333;
+            border-radius: 5px;
+            padding: 3px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        #correct-matches img, #incorrect-matches img {
+            width: 18px;
+            height: auto;
+            margin: 2px;
+        }
+        #correct-matches h2, #incorrect-matches h2 {
+            font-size: 20px;
+            margin: 0 5px 0 0;
+        }
+        button {
+            padding: 4px 8px;
+            font-size: 12px;
+            cursor: pointer;
+            background-color: #333;
+            color: white;
+            border: none;
+            border-radius: 3px;
+        }
+        button:hover {
+            background-color: #555;
+        }
+        select {
+            padding: 4px;
+            font-size: 12px;
+            border-radius: 3px;
+        }
+        h2 {
+            margin: 0;
+            font-size: 10px;
+        }
+        svg {
+            width: 100%;
+            height: 100%;
+            max-height: calc(100vh - 100px);
+        }
+        .country-path {
+            fill: #D3D3D3;
+            stroke: #333;
+            stroke-width: 0.5;
+            cursor: pointer;
+        }
+        .country-path:hover {
+            fill: #B0B0B0;
+        }
+        .country-label {
+            font-size: 8px;
+            fill: #333;
+            pointer-events: none;
+        }
+        .country-flag {
+            pointer-events: none;
+        }
+        #connection-line {
+            stroke: #333;
+            stroke-width: 3;
+            opacity: 1;
+            z-index: 1000;
+        }
+        @keyframes drawLine {
+            from { stroke-dashoffset: 1000; }
+            to { stroke-dashoffset: 0; }
+        }
+        #connection-line.draw {
+            stroke-dasharray: 1000;
+            stroke-dashoffset: 1000;
+            animation: drawLine 0.5s linear forwards;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div id="score">Score: 0</div>
+            <div>
+                <select id="tts-language">
+                    <option value="pl-PL">pl-PL</option>
+                    <option value="en-US">en-US</option>
+                    <option value="es-ES">es-ES</option>
+                    <option value="fr-FR">fr-FR</option>
+                </select>
+                <button id="reset-button" onclick="resetGame()">Reset</button>
+            </div>
+        </div>
+        <div id="results">
+            <div id="correct-matches">
+                <h2>😄</h2>
+            </div>
+            <div id="incorrect-matches">
+                <h2>🥵</h2>
+            </div>
+        </div>
+        <div class="game-area">
+            <div id="brands">
+                <h2 id="brands-header">Car Brands</h2>
+                <div class="tabs">
+                    <div id="tab-mainstream" class="tab active" onclick="showTab('mainstream')">Mainstream</div>
+                    <div id="tab-premium" class="tab" onclick="showTab('premium')">Premium</div>
+                    <div id="tab-exotic" class="tab" onclick="showTab('exotic')">Exotic</div>
+                    <div id="tab-defunct" class="tab" onclick="showTab('defunct')">Defunct</div>
+                </div>
+                <div id="mainstream" class="brand-list"></div>
+                <div id="premium" class="brand-list" style="display: none;"></div>
+                <div id="exotic" class="brand-list" style="display: none;"></div>
+                <div id="defunct" class="brand-list" style="display: none;"></div>
+            </div>
+            <div id="map">
+                <h2 id="map-header">World Map</h2>
+                <svg id="world-map" viewBox="0 0 1000 500">
+                    <defs>
+                        <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+                            <polygon points="0 0, 8 3, 0 6" fill="#333" />
+                        </marker>
+                    </defs>
+                    <path class="country-path" data-country="USA" data-polish="Stany Zjednoczone" data-english="United States" data-spanish="Estados Unidos" data-french="États-Unis" d="M100 100 L300 100 L300 300 L100 300 Z" />
+                    <image class="country-flag" x="160" y="160" width="40" height="24" href="https://flagcdn.com/w40/us.png" />
+                    <text class="country-label" x="200" y="200">USA</text>
+                    <path class="country-path" data-country="Japan" data-polish="Japonia" data-english="Japan" data-spanish="Japón" data-french="Japon" d="M800 100 L900 100 L900 200 L800 200 Z" />
+                    <image class="country-flag" x="810" y="110" width="40" height="24" href="https://flagcdn.com/w40/jp.png" />
+                    <text class="country-label" x="850" y="150">Japan</text>
+                    <path class="country-path" data-country="Germany" data-polish="Niemcy" data-english="Germany" data-spanish="Alemania" data-french="Allemagne" d="M400 100 L500 100 L500 200 L400 200 Z" />
+                    <image class="country-flag" x="410" y="110" width="40" height="24" href="https://flagcdn.com/w40/de.png" />
+                    <text class="country-label" x="450" y="150">Germany</text>
+                    <path class="country-path" data-country="France" data-polish="Francja" data-english="France" data-spanish="Francia" data-french="France" d="M350 150 L450 150 L450 250 L350 250 Z" />
+                    <image class="country-flag" x="360" y="160" width="40" height="24" href="https://flagcdn.com/w40/fr.png" />
+                    <text class="country-label" x="400" y="200">France</text>
+                    <path class="country-path" data-country="Italy" data-polish="Włochy" data-english="Italy" data-spanish="Italia" data-french="Italie" d="M450 200 L550 200 L550 300 L450 300 Z" />
+                    <image class="country-flag" x="460" y="210" width="40" height="24" href="https://flagcdn.com/w40/it.png" />
+                    <text class="country-label" x="500" y="250">Italy</text>
+                    <path class="country-path" data-country="United Kingdom" data-polish="Wielka Brytania" data-english="United Kingdom" data-spanish="Reino Unido" data-french="Royaume-Uni" d="M300 50 L400 50 L400 150 L300 150 Z" />
+                    <image class="country-flag" x="310" y="60" width="40" height="24" href="https://flagcdn.com/w40/gb.png" />
+                    <text class="country-label" x="350" y="100">UK</text>
+                    <path class="country-path" data-country="South Korea" data-polish="Korea Południowa" data-english="South Korea" data-spanish="Corea del Sur" data-french="Corée du Sud" d="M850 200 L950 200 L950 300 L850 300 Z" />
+                    <image class="country-flag" x="860" y="210" width="40" height="24" href="https://flagcdn.com/w40/kr.png" />
+                    <text class="country-label" x="900" y="250">South Korea</text>
+                    <path class="country-path" data-country="China" data-polish="Chiny" data-english="China" data-spanish="China" data-french="Chine" d="M700 150 L800 150 L800 250 L700 250 Z" />
+                    <image class="country-flag" x="710" y="160" width="40" height="24" href="https://flagcdn.com/w40/cn.png" />
+                    <text class="country-label" x="750" y="200">China</text>
+                    <path class="country-path" data-country="Australia" data-polish="Australia" data-english="Australia" data-spanish="Australia" data-french="Australie" d="M700 400 L800 400 L800 500 L700 500 Z" />
+                    <image class="country-flag" x="710" y="410" width="40" height="24" href="https://flagcdn.com/w40/au.png" />
+                    <text class="country-label" x="750" y="450">Australia</text>
+                    <path class="country-path" data-country="Poland" data-polish="Polska" data-english="Poland" data-spanish="Polonia" data-french="Pologne" d="M500 100 L550 100 L550 150 L500 150 Z" />
+                    <image class="country-flag" x="490" y="90" width="40" height="24" href="https://flagcdn.com/w40/pl.png" />
+                    <text class="country-label" x="525" y="125">Poland</text>
+                    <path class="country-path" data-country="Romania" data-polish="Rumunia" data-english="Romania" data-spanish="Rumania" data-french="Roumanie" d="M550 150 L600 150 L600 200 L550 200 Z" />
+                    <image class="country-flag" x="540" y="140" width="40" height="24" href="https://flagcdn.com/w40/ro.png" />
+                    <text class="country-label" x="575" y="175">Romania</text>
+                    <path class="country-path" data-country="Netherlands" data-polish="Holandia" data-english="Netherlands" data-spanish="Países Bajos" data-french="Pays-Bas" d="M400 50 L450 50 L450 100 L400 100 Z" />
+                    <image class="country-flag" x="390" y="40" width="40" height="24" href="https://flagcdn.com/w40/nl.png" />
+                    <text class="country-label" x="425" y="75">Netherlands</text>
+                    <path class="country-path" data-country="Russia" data-polish="Rosja" data-english="Russia" data-spanish="Rusia" data-french="Russie" d="M600 50 L700 50 L700 150 L600 150 Z" />
+                    <image class="country-flag" x="610" y="60" width="40" height="24" href="https://flagcdn.com/w40/ru.png" />
+                    <text class="country-label" x="650" y="100">Russia</text>
+                    <path class="country-path" data-country="Belgium" data-polish="Belgia" data-english="Belgium" data-spanish="Bélgica" data-french="Belgique" d="M350 100 L400 100 L400 150 L350 150 Z" />
+                    <image class="country-flag" x="340" y="90" width="40" height="24" href="https://flagcdn.com/w40/be.png" />
+                    <text class="country-label" x="375" y="125">Belgium</text>
+                    <path class="country-path" data-country="Sweden" data-polish="Szwecja" data-english="Sweden" data-spanish="Suecia" data-french="Suède" d="M450 0 L500 0 L500 50 L450 50 Z" />
+                    <image class="country-flag" x="460" y="10" width="40" height="24" href="https://flagcdn.com/w40/se.png" />
+                    <text class="country-label" x="475" y="25">Sweden</text>
+                    <path class="country-path" data-country="Spain" data-polish="Hiszpania" data-english="Spain" data-spanish="España" data-french="Espagne" d="M300 150 L350 150 L350 200 L300 200 Z" />
+                    <image class="country-flag" x="290" y="140" width="40" height="24" href="https://flagcdn.com/w40/es.png" />
+                    <text class="country-label" x="325" y="175">Spain</text>
+                    <path class="country-path" data-country="Czech Republic" data-polish="Czechy" data-english="Czech Republic" data-spanish="República Checa" data-french="République tchèque" d="M500 150 L550 150 L550 200 L500 200 Z" />
+                    <image class="country-flag" x="490" y="140" width="40" height="24" href="https://flagcdn.com/w40/cz.png" />
+                    <text class="country-label" x="525" y="175">Czech Republic</text>
+                    <path class="country-path" data-country="Croatia" data-polish="Chorwacja" data-english="Croatia" data-spanish="Croacia" data-french="Croatie" d="M550 200 L600 200 L600 250 L550 250 Z" />
+                    <image class="country-flag" x="555" y="205" width="40" height="24" href="https://flagcdn.com/w40/hr.png" />
+                    <text class="country-label" x="575" y="225">Croatia</text>
+                    <path class="country-path" data-country="India" data-polish="Indie" data-english="India" data-spanish="India" data-french="Inde" d="M650 300 L750 300 L750 400 L650 400 Z" />
+                    <image class="country-flag" x="660" y="310" width="40" height="24" href="https://flagcdn.com/w40/in.png" />
+                    <text class="country-label" x="700" y="350">India</text>
+                    <path class="country-path" data-country="Malaysia" data-polish="Malezja" data-english="Malaysia" data-spanish="Malasia" data-french="Malaisie" d="M750 250 L850 250 L850 350 L750 350 Z" />
+                    <image class="country-flag" x="760" y="260" width="40" height="24" href="https://flagcdn.com/w40/my.png" />
+                    <text class="country-label" x="800" y="300">Malaysia</text>
+                    <path class="country-path" data-country="Denmark" data-polish="Dania" data-english="Denmark" data-spanish="Dinamarca" data-french="Danemark" d="M450 25 L500 25 L500 75 L450 75 Z" />
+                    <image class="country-flag" x="460" y="30" width="40" height="24" href="https://flagcdn.com/w40/dk.png" />
+                    <text class="country-label" x="475" y="50">Denmark</text>
+                    <line id="connection-line" x1="0" y1="0" x2="0" y2="0" marker-end="url(#arrowhead)" />
+
+<path class="country-path" data-country="Taiwan" data-polish="Tajwan" data-english="Taiwan" data-spanish="Taiwán" data-french="Taïwan" d="M800 200 L850 200 L850 250 L800 250 Z" />
+    <image class="country-flag" x="800" y="210" width="40" height="24" href="https://flagcdn.com/w40/tw.png" />
+    <text class="country-label" x="810" y="245">Taiwan</text>
+    <path class="country-path" data-country="Turkey" data-polish="Turcja" data-english="Turkey" data-spanish="Turquía" data-french="Turquie" d="M550 250 L600 250 L600 300 L550 300 Z" />
+    <image class="country-flag" x="560" y="260" width="40" height="24" href="https://flagcdn.com/w40/tr.png" />
+    <text class="country-label" x="575" y="285">Turkey</text>
+    <path class="country-path" data-country="Vietnam" data-polish="Wietnam" data-english="Vietnam" data-spanish="Vietnam" data-french="Vietnam" d="M800 250 L850 250 L850 300 L800 300 Z" />
+    <image class="country-flag" x="810" y="260" width="40" height="24" href="https://flagcdn.com/w40/vn.png" />
+    <text class="country-label" x="825" y="285">Vietnam</text>
+    <path class="country-path" data-country="Serbia" data-polish="Serbia" data-english="Serbia" data-spanish="Serbia" data-french="Serbie" d="M600 200 L650 200 L650 250 L600 250 Z" />
+    <image class="country-flag" x="610" y="210" width="40" height="24" href="https://flagcdn.com/w40/rs.png" />
+    <text class="country-label" x="625" y="235">Serbia</text>
+    <line id="connection-line" x1="0" y1="0" x2="0" y2="0" marker-end="url(#arrowhead)" />
+
+                </svg>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+            return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+            if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+                try {
+                    var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                    var firstSheetName = workbook.SheetNames[0];
+                    var worksheet = workbook.Sheets[firstSheetName];
+                    var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                    var filteredData = jsonData.filter(row => row.some(filledCell));
+                    var headerRowIndex = filteredData.findIndex((row, index) =>
+                        row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                    );
+                    if (headerRowIndex === -1 || headerRowIndex > 25) {
+                        headerRowIndex = 0;
+                    }
+                    var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex));
+                    csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                    return csv;
+                } catch (e) {
+                    console.error(e);
+                    return "";
+                }
+            }
+            return gk_fileData[filename] || "";
+        }
+
+        const translations = {
+            'pl-PL': {
+                score: 'Punkty',
+                carBrands: 'Marki samochodów',
+                mainstream: 'Popularne',
+                premium: 'Premium',
+                exotic: 'Egzotyczne',
+                defunct: 'Nieistniejące',
+                reset: 'Resetuj',
+                worldMap: 'Mapa świata'
+            },
+            'en-US': {
+                score: 'Score',
+                carBrands: 'Car Brands',
+                mainstream: 'Mainstream',
+                premium: 'Premium',
+                exotic: 'Exotic',
+                defunct: 'Defunct',
+                reset: 'Reset',
+                worldMap: 'World Map'
+            },
+            'es-ES': {
+                score: 'Puntuación',
+                carBrands: 'Marcas de coches',
+                mainstream: 'Convencional',
+                premium: 'Premium',
+                exotic: 'Exótico',
+                defunct: 'Desaparecido',
+                reset: 'Reiniciar',
+                worldMap: 'Mapa mundial'
+            },
+            'fr-FR': {
+                score: 'Score',
+                carBrands: 'Marques de voitures',
+                mainstream: 'Grand public',
+                premium: 'Premium',
+                exotic: 'Exotique',
+                defunct: 'Disparu',
+                reset: 'Réinitialiser',
+                worldMap: 'Carte du monde'
+            }
+        };
+
+const carData = [
+    { brand: "Abarth", country: "Italy", language: "it-IT", logo: "https://www.carlogos.org/car-logos/abarth-logo.png", flag: "https://flagcdn.com/w40/it.png", tier: "exotic" },
+    { brand: "AC", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/ac-cars-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "exotic" },
+    { brand: "Acura", country: "Japan", language: "ja-JP", logo: "https://www.carlogos.org/car-logos/acura-logo.png", flag: "https://flagcdn.com/w40/jp.png", tier: "premium" },
+    { brand: "Aixam", country: "France", language: "fr-FR", logo: "https://www.carlogos.org/car-logos/aixam-logo.png", flag: "https://flagcdn.com/w40/fr.png", tier: "mainstream" },
+    { brand: "Alfa Romeo", country: "Italy", language: "it-IT", logo: "https://www.carlogos.org/car-logos/alfa-romeo-logo.png", flag: "https://flagcdn.com/w40/it.png", tier: "premium" },
+    { brand: "Alpina", country: "Germany", language: "de-DE", logo: "https://www.carlogos.org/car-logos/alpina-logo.png", flag: "https://flagcdn.com/w40/de.png", tier: "premium" },
+    { brand: "Apollo", country: "Germany", language: "de-DE", logo: "https://www.carlogos.org/car-logos/apollo-automobile-logo.png", flag: "https://flagcdn.com/w40/de.png", tier: "exotic" },
+    { brand: "Ariel", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/ariel-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "exotic" },
+    { brand: "Arrinera", country: "Poland", language: "pl-PL", logo: "https://www.carlogos.org/car-logos/arrinera-logo.png", flag: "https://flagcdn.com/w40/pl.png", tier: "exotic" },
+    { brand: "Ascari", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/ascari-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "defunct" },
+    { brand: "Aston Martin", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/aston-martin-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "exotic" },
+    { brand: "Audi", country: "Germany", language: "de-DE", logo: "https://www.carlogos.org/car-logos/audi-logo.png", flag: "https://flagcdn.com/w40/de.png", tier: "premium" },
+    { brand: "BAC", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/bac-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "exotic" },
+    { brand: "Bentley", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/bentley-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "exotic" },
+    { brand: "BMW", country: "Germany", language: "de-DE", logo: "https://www.carlogos.org/car-logos/bmw-logo.png", flag: "https://flagcdn.com/w40/de.png", tier: "premium" },
+    { brand: "Bugatti", country: "France", language: "fr-FR", logo: "https://www.carlogos.org/car-logos/bugatti-logo.png", flag: "https://flagcdn.com/w40/fr.png", tier: "exotic" },
+    { brand: "Buick", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/buick-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "mainstream" },
+    { brand: "Cadillac", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/cadillac-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "premium" },
+    { brand: "Caterham", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/caterham-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "exotic" },
+    { brand: "Chery", country: "China", language: "zh-CN", logo: "https://www.carlogos.org/car-logos/chery-logo.png", flag: "https://flagcdn.com/w40/cn.png", tier: "mainstream" },
+    { brand: "Chevrolet", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/chevrolet-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "mainstream" },
+    { brand: "Chrysler", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/chrysler-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "mainstream" },
+    { brand: "Citroën", country: "France", language: "fr-FR", logo: "https://www.carlogos.org/car-logos/citroen-logo.png", flag: "https://flagcdn.com/w40/fr.png", tier: "mainstream" },
+    { brand: "Corvette", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/corvette-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "premium" },
+    { brand: "Cupra", country: "Spain", language: "es-ES", logo: "https://www.carlogos.org/car-logos/cupra-logo.png", flag: "https://flagcdn.com/w40/es.png", tier: "premium" },
+    { brand: "Czinger", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/czinger-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "exotic" },
+    { brand: "Dacia", country: "Romania", language: "ro-RO", logo: "https://www.carlogos.org/car-logos/dacia-logo.png", flag: "https://flagcdn.com/w40/ro.png", tier: "mainstream" },
+    { brand: "Daf", country: "Netherlands", language: "nl-NL", logo: "https://www.carlogos.org/car-logos/daf-logo.png", flag: "https://flagcdn.com/w40/nl.png", tier: "mainstream" },
+    { brand: "Daihatsu", country: "Japan", language: "ja-JP", logo: "https://www.carlogos.org/car-logos/daihatsu-logo.png", flag: "https://flagcdn.com/w40/jp.png", tier: "mainstream" },
+    { brand: "De Tomaso", country: "Italy", language: "it-IT", logo: "https://www.carlogos.org/car-logos/de-tomaso-logo.png", flag: "https://flagcdn.com/w40/it.png", tier: "exotic" },
+    { brand: "Dodge", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/dodge-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "mainstream" },
+    { brand: "Donkervoort", country: "Netherlands", language: "nl-NL", logo: "https://www.carlogos.org/car-logos/donkervoort-logo.png", flag: "https://flagcdn.com/w40/nl.png", tier: "exotic" },
+    { brand: "DR Motor", country: "Italy", language: "it-IT", logo: "https://www.carlogos.org/car-logos/dr-motor-logo.png", flag: "https://flagcdn.com/w40/it.png", tier: "mainstream" },
+    { brand: "DS Automobiles", country: "France", language: "fr-FR", logo: "https://www.carlogos.org/car-logos/ds-logo.png", flag: "https://flagcdn.com/w40/fr.png", tier: "premium" },
+    { brand: "Elfin", country: "Australia", language: "en-AU", logo: "https://www.carlogos.org/car-logos/elfin-logo.png", flag: "https://flagcdn.com/w40/au.png", tier: "exotic" },
+    { brand: "Ferrari", country: "Italy", language: "it-IT", logo: "https://www.carlogos.org/car-logos/ferrari-logo.png", flag: "https://flagcdn.com/w40/it.png", tier: "exotic" },
+    { brand: "Fiat", country: "Italy", language: "it-IT", logo: "https://www.carlogos.org/car-logos/fiat-logo.png", flag: "https://flagcdn.com/w40/it.png", tier: "mainstream" },
+    { brand: "Ford", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/ford-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "mainstream" },
+    { brand: "Gaz", country: "Russia", language: "ru-RU", logo: "https://www.carlogos.org/car-logos/gaz-logo.png", flag: "https://flagcdn.com/w40/ru.png", tier: "mainstream" },
+    { brand: "Geely", country: "China", language: "zh-CN", logo: "https://www.carlogos.org/car-logos/geely-logo.png", flag: "https://flagcdn.com/w40/cn.png", tier: "mainstream" },
+    { brand: "Genesis", country: "South Korea", language: "ko-KR", logo: "https://www.carlogos.org/car-logos/genesis-logo.png", flag: "https://flagcdn.com/w40/kr.png", tier: "premium" },
+    { brand: "Gillet", country: "Belgium", language: "fr-BE", logo: "https://www.carlogos.org/car-logos/gillet-logo.png", flag: "https://flagcdn.com/w40/be.png", tier: "exotic" },
+    { brand: "Ginetta", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/ginetta-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "exotic" },
+    { brand: "General Motors", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/gm-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "mainstream" },
+    { brand: "GMC", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/gmc-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "mainstream" },
+    { brand: "Great Wall", country: "China", language: "zh-CN", logo: "https://www.carlogos.org/car-logos/great-wall-logo.png", flag: "https://flagcdn.com/w40/cn.png", tier: "mainstream" },
+    { brand: "Gumpert", country: "Germany", language: "de-DE", logo: "https://www.carlogos.org/car-logos/gumpert-logo.png", flag: "https://flagcdn.com/w40/de.png", tier: "defunct" },
+    { brand: "Hennessey", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/hennessey-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "exotic" },
+    { brand: "Hispano Suiza", country: "Spain", language: "es-ES", logo: "https://www.carlogos.org/car-logos/hispano-suiza-logo.png", flag: "https://flagcdn.com/w40/es.png", tier: "exotic" },
+    { brand: "Holden", country: "Australia", language: "en-AU", logo: "https://www.carlogos.org/car-logos/holden-logo.png", flag: "https://flagcdn.com/w40/au.png", tier: "defunct" },
+    { brand: "Honda", country: "Japan", language: "ja-JP", logo: "https://www.carlogos.org/car-logos/honda-logo.png", flag: "https://flagcdn.com/w40/jp.png", tier: "mainstream" },
+    { brand: "Hummer", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/hummer-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "mainstream" },
+    { brand: "Hyundai", country: "South Korea", language: "ko-KR", logo: "https://www.carlogos.org/car-logos/hyundai-logo.png", flag: "https://flagcdn.com/w40/kr.png", tier: "mainstream" },
+    { brand: "Infiniti", country: "Japan", language: "ja-JP", logo: "https://www.carlogos.org/car-logos/infiniti-logo.png", flag: "https://flagcdn.com/w40/jp.png", tier: "premium" },
+    { brand: "Isuzu", country: "Japan", language: "ja-JP", logo: "https://www.carlogos.org/car-logos/isuzu-logo.png", flag: "https://flagcdn.com/w40/jp.png", tier: "mainstream" },
+    { brand: "Jaguar", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/jaguar-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "premium" },
+    { brand: "Jeep", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/jeep-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "mainstream" },
+    { brand: "Kia", country: "South Korea", language: "ko-KR", logo: "https://www.carlogos.org/car-logos/kia-logo.png", flag: "https://flagcdn.com/w40/kr.png", tier: "mainstream" },
+    { brand: "Koenigsegg", country: "Sweden", language: "sv-SE", logo: "https://www.carlogos.org/car-logos/koenigsegg-logo.png", flag: "https://flagcdn.com/w40/se.png", tier: "exotic" },
+    { brand: "Lada", country: "Russia", language: "ru-RU", logo: "https://www.carlogos.org/car-logos/lada-logo.png", flag: "https://flagcdn.com/w40/ru.png", tier: "mainstream" },
+    { brand: "Lamborghini", country: "Italy", language: "it-IT", logo: "https://www.carlogos.org/car-logos/lamborghini-logo.png", flag: "https://flagcdn.com/w40/it.png", tier: "exotic" },
+    { brand: "Lancia", country: "Italy", language: "it-IT", logo: "https://www.carlogos.org/car-logos/lancia-logo.png", flag: "https://flagcdn.com/w40/it.png", tier: "mainstream" },
+    { brand: "Land Rover", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/land-rover-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "premium" },
+    { brand: "Lexus", country: "Japan", language: "ja-JP", logo: "https://www.carlogos.org/car-logos/lexus-logo.png", flag: "https://flagcdn.com/w40/jp.png", tier: "premium" },
+    { brand: "Lincoln", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/lincoln-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "premium" },
+    { brand: "Lotus", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/lotus-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "exotic" },
+    { brand: "Mahindra", country: "India", language: "hi-IN", logo: "https://www.carlogos.org/car-logos/mahindra-logo.png", flag: "https://flagcdn.com/w40/in.png", tier: "mainstream" },
+    { brand: "Maruti Suzuki", country: "India", language: "hi-IN", logo: "https://www.carlogos.org/car-logos/maruti-suzuki-logo.png", flag: "https://flagcdn.com/w40/in.png", tier: "mainstream" },
+    { brand: "Maserati", country: "Italy", language: "it-IT", logo: "https://www.carlogos.org/car-logos/maserati-logo.png", flag: "https://flagcdn.com/w40/it.png", tier: "exotic" },
+    { brand: "Mazda", country: "Japan", language: "ja-JP", logo: "https://www.carlogos.org/car-logos/mazda-logo.png", flag: "https://flagcdn.com/w40/jp.png", tier: "mainstream" },
+    { brand: "McLaren", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/mclaren-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "exotic" },
+    { brand: "Mercedes-Benz", country: "Germany", language: "de-DE", logo: "https://www.carlogos.org/car-logos/mercedes-benz-logo.png", flag: "https://flagcdn.com/w40/de.png", tier: "premium" },
+    { brand: "Mini", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/mini-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "mainstream" },
+    { brand: "Mitsubishi", country: "Japan", language: "ja-JP", logo: "https://www.carlogos.org/car-logos/mitsubishi-logo.png", flag: "https://flagcdn.com/w40/jp.png", tier: "mainstream" },
+    { brand: "NIO", country: "China", language: "zh-CN", logo: "https://www.carlogos.org/car-logos/nio-logo.png", flag: "https://flagcdn.com/w40/cn.png", tier: "premium" },
+    { brand: "Nissan", country: "Japan", language: "ja-JP", logo: "https://www.carlogos.org/car-logos/nissan-logo.png", flag: "https://flagcdn.com/w40/jp.png", tier: "mainstream" },
+    { brand: "Noble", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/noble-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "exotic" },
+    { brand: "Opel", country: "Germany", language: "de-DE", logo: "https://www.carlogos.org/car-logos/opel-logo.png", flag: "https://flagcdn.com/w40/de.png", tier: "mainstream" },
+    { brand: "Pagani", country: "Italy", language: "it-IT", logo: "https://www.carlogos.org/car-logos/pagani-logo.png", flag: "https://flagcdn.com/w40/it.png", tier: "exotic" },
+    { brand: "Perodua", country: "Malaysia", language: "ms-MY", logo: "https://www.carlogos.org/car-logos/perodua-logo.png", flag: "https://flagcdn.com/w40/my.png", tier: "mainstream" },
+    { brand: "Peugeot", country: "France", language: "fr-FR", logo: "https://www.carlogos.org/car-logos/peugeot-logo.png", flag: "https://flagcdn.com/w40/fr.png", tier: "mainstream" },
+    { brand: "Pininfarina", country: "Italy", language: "it-IT", logo: "https://www.carlogos.org/car-logos/pininfarina-logo.png", flag: "https://flagcdn.com/w40/it.png", tier: "exotic" },
+    { brand: "Polestar", country: "Sweden", language: "sv-SE", logo: "https://www.carlogos.org/car-logos/polestar-logo.png", flag: "https://flagcdn.com/w40/se.png", tier: "premium" },
+    { brand: "Porsche", country: "Germany", language: "de-DE", logo: "https://www.carlogos.org/car-logos/porsche-logo.png", flag: "https://flagcdn.com/w40/de.png", tier: "exotic" },
+    { brand: "Proton", country: "Malaysia", language: "ms-MY", logo: "https://www.carlogos.org/car-logos/proton-logo.png", flag: "https://flagcdn.com/w40/my.png", tier: "mainstream" },
+    { brand: "Renault", country: "France", language: "fr-FR", logo: "https://www.carlogos.org/car-logos/renault-logo.png", flag: "https://flagcdn.com/w40/fr.png", tier: "mainstream" },
+    { brand: "Rimac", country: "Croatia", language: "hr-HR", logo: "https://www.carlogos.org/car-logos/rimac-logo.png", flag: "https://flagcdn.com/w40/hr.png", tier: "exotic" },
+    { brand: "Saab", country: "Sweden", language: "sv-SE", logo: "https://www.carlogos.org/car-logos/saab-logo.png", flag: "https://flagcdn.com/w40/se.png", tier: "defunct" },
+    { brand: "Saleen", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/saleen-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "exotic" },
+    { brand: "Seat", country: "Spain", language: "es-ES", logo: "https://www.carlogos.org/car-logos/seat-logo.png", flag: "https://flagcdn.com/w40/es.png", tier: "mainstream" },
+    { brand: "Skoda", country: "Czech Republic", language: "cs-CZ", logo: "https://www.carlogos.org/car-logos/skoda-logo.png", flag: "https://flagcdn.com/w40/cz.png", tier: "mainstream" },
+    { brand: "Spyker", country: "Netherlands", language: "nl-NL", logo: "https://www.carlogos.org/car-logos/spyker-logo.png", flag: "https://flagcdn.com/w40/nl.png", tier: "exotic" },
+    { brand: "SsangYong", country: "South Korea", language: "ko-KR", logo: "https://www.carlogos.org/car-logos/ssangyong-logo.png", flag: "https://flagcdn.com/w40/kr.png", tier: "mainstream" },
+    { brand: "Subaru", country: "Japan", language: "ja-JP", logo: "https://www.carlogos.org/car-logos/subaru-logo.png", flag: "https://flagcdn.com/w40/jp.png", tier: "mainstream" },
+    { brand: "Suzuki", country: "Japan", language: "ja-JP", logo: "https://www.carlogos.org/car-logos/suzuki-logo.png", flag: "https://flagcdn.com/w40/jp.png", tier: "mainstream" },
+    { brand: "Tata", country: "India", language: "hi-IN", logo: "https://www.carlogos.org/car-logos/tata-logo.png", flag: "https://flagcdn.com/w40/in.png", tier: "mainstream" },
+    { brand: "Tesla", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/tesla-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "premium" },
+    { brand: "Toyota", country: "Japan", language: "ja-JP", logo: "https://www.carlogos.org/car-logos/toyota-logo.png", flag: "https://flagcdn.com/w40/jp.png", tier: "mainstream" },
+    { brand: "TVR", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/tvr-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "exotic" },
+    { brand: "UAZ", country: "Russia", language: "ru-RU", logo: "https://www.carlogos.org/car-logos/uaz-logo.png", flag: "https://flagcdn.com/w40/ru.png", tier: "mainstream" },
+    { brand: "Vector", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/vector-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "defunct" },
+    { brand: "Volkswagen", country: "Germany", language: "de-DE", logo: "https://www.carlogos.org/car-logos/volkswagen-logo.png", flag: "https://flagcdn.com/w40/de.png", tier: "mainstream" },
+    { brand: "Volvo", country: "Sweden", language: "sv-SE", logo: "https://www.carlogos.org/car-logos/volvo-logo.png", flag: "https://flagcdn.com/w40/se.png", tier: "premium" },
+    { brand: "Zenvo", country: "Denmark", language: "da-DK", logo: "https://www.carlogos.org/car-logos/zenvo-logo.png", flag: "https://flagcdn.com/w40/dk.png", tier: "exotic" },
+    { brand: "Austin", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/austin-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "defunct" },
+    { brand: "DeLorean", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/delorean-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "defunct" },
+    { brand: "Humber", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/humber-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "defunct" },
+    { brand: "Mercury", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/mercury-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "defunct" },
+    { brand: "Oldsmobile", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/oldsmobile-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "defunct" },
+    { brand: "Plymouth", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/plymouth-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "defunct" },
+    { brand: "Pontiac", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/pontiac-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "defunct" },
+    { brand: "Rover", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/rover-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "defunct" },
+    { brand: "Saturn", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/saturn-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "defunct" },
+    { brand: "Triumph", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/triumph-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "defunct" },
+    { brand: "Alpine", country: "France", language: "fr-FR", logo: "https://www.carlogos.org/car-logos/alpine-logo.png", flag: "https://flagcdn.com/w40/fr.png", tier: "premium" },
+    { brand: "Arash", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/arash-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "exotic" },
+    { brand: "Aspark", country: "Japan", language: "ja-JP", logo: "https://www.carlogos.org/car-logos/aspark-logo.png", flag: "https://flagcdn.com/w40/jp.png", tier: "exotic" },
+    { brand: "Autobianchi", country: "Italy", language: "it-IT", logo: "https://www.carlogos.org/car-logos/autobianchi-logo.png", flag: "https://flagcdn.com/w40/it.png", tier: "defunct" },
+    { brand: "BAIC", country: "China", language: "zh-CN", logo: "https://www.carlogos.org/car-logos/baic-logo.png", flag: "https://flagcdn.com/w40/cn.png", tier: "mainstream" },
+    { brand: "Bitter", country: "Germany", language: "de-DE", logo: "https://www.carlogos.org/car-logos/bitter-logo.png", flag: "https://flagcdn.com/w40/de.png", tier: "exotic" },
+    { brand: "Bolloré", country: "France", language: "fr-FR", logo: "https://www.carlogos.org/car-logos/bollore-logo.png", flag: "https://flagcdn.com/w40/fr.png", tier: "mainstream" },
+    { brand: "Borgward", country: "Germany", language: "de-DE", logo: "https://www.carlogos.org/car-logos/borgward-logo.png", flag: "https://flagcdn.com/w40/de.png", tier: "defunct" },
+    { brand: "Brilliance", country: "China", language: "zh-CN", logo: "https://www.carlogos.org/car-logos/brilliance-logo.png", flag: "https://flagcdn.com/w40/cn.png", tier: "mainstream" },
+    { brand: "Bristol", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/bristol-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "defunct" },
+    { brand: "BYD", country: "China", language: "zh-CN", logo: "https://www.carlogos.org/car-logos/byd-logo.png", flag: "https://flagcdn.com/w40/cn.png", tier: "mainstream" },
+    { brand: "Changan", country: "China", language: "zh-CN", logo: "https://www.carlogos.org/car-logos/changan-logo.png", flag: "https://flagcdn.com/w40/cn.png", tier: "mainstream" },
+    { brand: "Datsun", country: "Japan", language: "ja-JP", logo: "https://www.carlogos.org/car-logos/datsun-logo.png", flag: "https://flagcdn.com/w40/jp.png", tier: "mainstream" },
+    { brand: "Delage", country: "France", language: "fr-FR", logo: "https://www.carlogos.org/car-logos/delage-logo.png", flag: "https://flagcdn.com/w40/fr.png", tier: "defunct" },
+    { brand: "Duesenberg", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/duesenberg-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "defunct" },
+    { brand: "Facel Vega", country: "France", language: "fr-FR", logo: "https://www.carlogos.org/car-logos/facel-vega-logo.png", flag: "https://flagcdn.com/w40/fr.png", tier: "defunct" },
+    { brand: "FAW", country: "China", language: "zh-CN", logo: "https://www.carlogos.org/car-logos/faw-logo.png", flag: "https://flagcdn.com/w40/cn.png", tier: "mainstream" },
+    { brand: "Fisker", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/fisker-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "premium" },
+    { brand: "Foton", country: "China", language: "zh-CN", logo: "https://www.carlogos.org/car-logos/foton-logo.png", flag: "https://flagcdn.com/w40/cn.png", tier: "mainstream" },
+    { brand: "Haval", country: "China", language: "zh-CN", logo: "https://www.carlogos.org/car-logos/haval-logo.png", flag: "https://flagcdn.com/w40/cn.png", tier: "mainstream" },
+    { brand: "Hongqi", country: "China", language: "zh-CN", logo: "https://www.carlogos.org/car-logos/hongqi-logo.png", flag: "https://flagcdn.com/w40/cn.png", tier: "premium" },
+    { brand: "Horch", country: "Germany", language: "de-DE", logo: "https://www.carlogos.org/car-logos/horch-logo.png", flag: "https://flagcdn.com/w40/de.png", tier: "defunct" },
+    { brand: "Hudson", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/hudson-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "defunct" },
+    { brand: "Imperia", country: "Belgium", language: "fr-BE", logo: "https://www.carlogos.org/car-logos/imperia-logo.png", flag: "https://flagcdn.com/w40/be.png", tier: "defunct" },
+    { brand: "Iso", country: "Italy", language: "it-IT", logo: "https://www.carlogos.org/car-logos/iso-logo.png", flag: "https://flagcdn.com/w40/it.png", tier: "defunct" },
+    { brand: "JAC", country: "China", language: "zh-CN", logo: "https://www.carlogos.org/car-logos/jac-logo.png", flag: "https://flagcdn.com/w40/cn.png", tier: "mainstream" },
+    { brand: "Jensen", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/jensen-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "defunct" },
+    { brand: "Karry", country: "China", language: "zh-CN", logo: "https://www.carlogos.org/car-logos/karry-logo.png", flag: "https://flagcdn.com/w40/cn.png", tier: "mainstream" },
+    { brand: "Lagonda", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/lagonda-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "exotic" },
+    { brand: "Lancia", country: "Italy", language: "it-IT", logo: "https://www.carlogos.org/car-logos/lancia-logo.png", flag: "https://flagcdn.com/w40/it.png", tier: "mainstream" },
+    { brand: "Ligier", country: "France", language: "fr-FR", logo: "https://www.carlogos.org/car-logos/ligier-logo.png", flag: "https://flagcdn.com/w40/fr.png", tier: "mainstream" },
+    { brand: "Li Auto", country: "China", language: "zh-CN", logo: "https://www.carlogos.org/car-logos/li-auto-logo.png", flag: "https://flagcdn.com/w40/cn.png", tier: "premium" },
+    { brand: "Lister", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/lister-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "exotic" },
+    { brand: "Lucid", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/lucid-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "premium" },
+    { brand: "Luxgen", country: "Taiwan", language: "zh-TW", logo: "https://www.carlogos.org/car-logos/luxgen-logo.png", flag: "https://flagcdn.com/w40/tw.png", tier: "mainstream" },
+    { brand: "Marcos", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/marcos-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "exotic" },
+    { brand: "MG", country: "China", language: "zh-CN", logo: "https://www.carlogos.org/car-logos/mg-logo.png", flag: "https://flagcdn.com/w40/cn.png", tier: "mainstream" },
+    { brand: "Morgan", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/morgan-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "exotic" },
+    { brand: "Moskvitch", country: "Russia", language: "ru-RU", logo: "https://www.carlogos.org/car-logos/moskvitch-logo.png", flag: "https://flagcdn.com/w40/ru.png", tier: "defunct" },
+    { brand: "Panhard", country: "France", language: "fr-FR", logo: "https://www.carlogos.org/car-logos/panhard-logo.png", flag: "https://flagcdn.com/w40/fr.png", tier: "defunct" },
+    { brand: "Qoros", country: "China", language: "zh-CN", logo: "https://www.carlogos.org/car-logos/qoros-logo.png", flag: "https://flagcdn.com/w40/cn.png", tier: "mainstream" },
+    { brand: "Radical", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/radical-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "exotic" },
+    { brand: "Ram", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/ram-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "mainstream" },
+    { brand: "Reliant", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/reliant-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "defunct" },
+    { brand: "Rivian", country: "USA", language: "en-US", logo: "https://www.carlogos.org/car-logos/rivian-logo.png", flag: "https://flagcdn.com/w40/us.png", tier: "premium" },
+    { brand: "Rolls-Royce", country: "United Kingdom", language: "en-GB", logo: "https://www.carlogos.org/car-logos/rolls-royce-logo.png", flag: "https://flagcdn.com/w40/gb.png", tier: "exotic" },
+    { brand: "Simca", country: "France", language: "fr-FR", logo: "https://www.carlogos.org/car-logos/simca-logo.png", flag: "https://flagcdn.com/w40/fr.png", tier: "defunct" },
+    { brand: "Smart", country: "Germany", language: "de-DE", logo: "https://www.carlogos.org/car-logos/smart-logo.png", flag: "https://flagcdn.com/w40/de.png", tier: "mainstream" },
+    { brand: "Talbot", country: "France", language: "fr-FR", logo: "https://www.carlogos.org/car-logos/talbot-logo.png", flag: "https://flagcdn.com/w40/fr.png", tier: "defunct" },
+    { brand: "Togg", country: "Turkey", language: "tr-TR", logo: "https://www.carlogos.org/car-logos/togg-logo.png", flag: "https://flagcdn.com/w40/tr.png", tier: "mainstream" },
+    { brand: "VinFast", country: "Vietnam", language: "vi-VN", logo: "https://www.carlogos.org/car-logos/vinfast-logo.png", flag: "https://flagcdn.com/w40/vn.png", tier: "mainstream" },
+    { brand: "Wiesmann", country: "Germany", language: "de-DE", logo: "https://www.carlogos.org/car-logos/wiesmann-logo.png", flag: "https://flagcdn.com/w40/de.png", tier: "exotic" },
+    { brand: "Xpeng", country: "China", language: "zh-CN", logo: "https://www.carlogos.org/car-logos/xpeng-logo.png", flag: "https://flagcdn.com/w40/cn.png", tier: "premium" },
+    { brand: "Zastava", country: "Serbia", language: "sr-RS", logo: "https://www.carlogos.org/car-logos/zastava-logo.png", flag: "https://flagcdn.com/w40/rs.png", tier: "defunct" }
+];
+
+        let score = 0;
+        let selectedBrand = null;
+        let lastCountry = null;
+        let anchorPoint = null;
+        const incorrectBrands = new Set();
+        const brandsDiv = document.getElementById('brands');
+        const mapSvg = document.getElementById('world-map');
+        const scoreDisplay = document.getElementById('score');
+        const correctMatches = document.getElementById('correct-matches');
+        const incorrectMatches = document.getElementById('incorrect-matches');
+        const ttsLanguageSelect = document.getElementById('tts-language');
+        let connectionLine = null;
+
+        function speak(text, language) {
+            if (!text || !language) return;
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = language;
+            utterance.rate = 1.0;
+            speechSynthesis.speak(utterance);
+        }
+
+        function triggerConfetti() {
+            confetti({
+                particleCount: 100,
+                spread: 90,
+                origin: { y: 0.6 },
+                disableForReducedMotion: true
+            });
+            setTimeout(() => confetti.reset(), 2000);
+        }
+
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        function updateLineToCursor(event) {
+            if (!selectedBrand || !anchorPoint || !connectionLine) return;
+            const svgRect = mapSvg.getBoundingClientRect();
+            let x2 = ((event.clientX - svgRect.left) * 1000 / svgRect.width);
+            let y2 = ((event.clientY - svgRect.top) * 500 / svgRect.height);
+
+            // Calculate distance from anchor point to cursor
+            const dx = x2 - anchorPoint.x;
+            const dy = y2 - anchorPoint.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            // Cap the maximum length of the line to prevent arrowhead separation
+            const maxLength = 1000;
+            if (distance > maxLength) {
+                const scale = maxLength / distance;
+                x2 = anchorPoint.x + dx * scale;
+                y2 = anchorPoint.y + dy * scale;
+            }
+
+            connectionLine.setAttribute('x1', anchorPoint.x);
+            connectionLine.setAttribute('y1', anchorPoint.y);
+            connectionLine.setAttribute('x2', x2);
+            connectionLine.setAttribute('y2', y2);
+            connectionLine.classList.add('draw');
+        }
+
+        function clearLine() {
+            if (!connectionLine) return;
+            connectionLine.classList.remove('draw');
+            connectionLine.setAttribute('x1', 0);
+            connectionLine.setAttribute('y1', 0);
+            connectionLine.setAttribute('x2', 0);
+            connectionLine.setAttribute('y2', 0);
+            anchorPoint = null;
+        }
+
+        function showTab(tier) {
+            const tabs = document.querySelectorAll('.tab');
+            const lists = document.querySelectorAll('.brand-list');
+            tabs.forEach(tab => tab.classList.remove('active'));
+            lists.forEach(list => list.style.display = 'none');
+            document.querySelector(`.tab[onclick="showTab('${tier}')"]`).classList.add('active');
+            document.getElementById(tier).style.display = 'block';
+        }
+
+        function updateCountryLabels() {
+            const selectedLang = ttsLanguageSelect.value;
+            const langKey = {
+                'pl-PL': 'polish',
+                'en-US': 'english',
+                'es-ES': 'spanish',
+                'fr-FR': 'french'
+            }[selectedLang];
+            const countryPaths = mapSvg.querySelectorAll('.country-path');
+            countryPaths.forEach(path => {
+                let sibling = path.nextElementSibling;
+                if (sibling && sibling.classList.contains('country-flag')) {
+                    sibling = sibling.nextElementSibling;
+                    if (sibling && sibling.classList.contains('country-label')) {
+                        sibling.textContent = path.dataset[langKey] || path.dataset.english;
+                    }
+                }
+            });
+        }
+
+        function updateInterfaceText() {
+            const selectedLang = ttsLanguageSelect.value;
+            const t = translations[selectedLang];
+            scoreDisplay.textContent = `${t.score}: ${score}`;
+            document.getElementById('brands-header').textContent = t.carBrands;
+            document.getElementById('tab-mainstream').textContent = t.mainstream;
+            document.getElementById('tab-premium').textContent = t.premium;
+            document.getElementById('tab-exotic').textContent = t.exotic;
+            document.getElementById('tab-defunct').textContent = t.defunct;
+            document.getElementById('reset-button').textContent = t.reset;
+            document.getElementById('map-header').textContent = t.worldMap;
+        }
+
+        function initializeGame() {
+            connectionLine = document.getElementById('connection-line');
+            correctMatches.innerHTML = '<h2>😄</h2>';
+            incorrectMatches.innerHTML = '<h2>🥵</h2>';
+            score = 0;
+            scoreDisplay.textContent = `${translations[ttsLanguageSelect.value].score}: ${score}`;
+            selectedBrand = null;
+            lastCountry = null;
+            anchorPoint = null;
+            incorrectBrands.clear();
+            connectionLine.setAttribute('x1', 0);
+            connectionLine.setAttribute('y1', 0);
+            connectionLine.setAttribute('x2', 0);
+            connectionLine.setAttribute('y2', 0);
+            connectionLine.classList.remove('draw');
+
+            const mainstreamList = document.getElementById('mainstream');
+            const premiumList = document.getElementById('premium');
+            const exoticList = document.getElementById('exotic');
+            const defunctList = document.getElementById('defunct');
+            mainstreamList.innerHTML = '';
+            premiumList.innerHTML = '';
+            exoticList.innerHTML = '';
+            defunctList.innerHTML = '';
+
+            const shuffledBrands = shuffle([...carData]);
+
+            shuffledBrands.forEach(item => {
+                const brandDiv = document.createElement('div');
+                brandDiv.className = 'brand';
+                brandDiv.dataset.brand = item.brand;
+                brandDiv.dataset.language = item.language;
+
+                const logoImg = document.createElement('img');
+                logoImg.src = item.logo;
+                logoImg.alt = item.brand;
+                logoImg.title = item.brand;
+                logoImg.className = 'logo';
+                logoImg.onerror = () => {
+                    logoImg.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjUiIGhlaWdodD0iMjUiIHZpZXdCb3g9IjAgMCAyNSAyNSIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMTIuNSIgY3k9IjEyLjUiIHI9IjEyLjUiIGZpbGw9IiM4Q0EzNEEiLz4KPHRleHQgeD0iMTIuNSIgeT0iMTYuNSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjciIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5Mb2dvPC90ZXh0Pgo8L3N2Zz4=';
+                };
+
+                brandDiv.appendChild(logoImg);
+                brandDiv.appendChild(document.createTextNode(item.brand));
+                const feedbackSpan = document.createElement('span');
+                feedbackSpan.className = 'feedback';
+                brandDiv.appendChild(feedbackSpan);
+                brandDiv.addEventListener('click', () => {
+                    selectBrand(brandDiv);
+                    speak(item.brand, item.language);
+                });
+
+                if (item.tier === 'mainstream') {
+                    mainstreamList.appendChild(brandDiv);
+                } else if (item.tier === 'premium') {
+                    premiumList.appendChild(brandDiv);
+                } else if (item.tier === 'exotic') {
+                    exoticList.appendChild(brandDiv);
+                } else if (item.tier === 'defunct') {
+                    defunctList.appendChild(brandDiv);
+                }
+            });
+
+            const countryPaths = mapSvg.querySelectorAll('.country-path');
+            countryPaths.forEach(path => {
+                path.removeEventListener('click', selectCountry);
+                path.addEventListener('click', (e) => {
+                    lastCountry = e.target.dataset.country;
+                    selectCountry(e.target);
+                });
+            });
+
+            document.addEventListener('mousemove', updateLineToCursor);
+            updateCountryLabels();
+            updateInterfaceText();
+        }
+
+        function selectBrand(brandElement) {
+            if (selectedBrand) {
+                selectedBrand.classList.remove('selected');
+                const feedback = selectedBrand.querySelector('.feedback');
+                if (feedback) feedback.innerHTML = '';
+                clearLine();
+            }
+            selectedBrand = brandElement;
+            if (selectedBrand) {
+                selectedBrand.classList.add('selected');
+                const brandRect = selectedBrand.getBoundingClientRect();
+                const svgRect = mapSvg.getBoundingClientRect();
+                anchorPoint = {
+                    x: ((brandRect.right - svgRect.left) * 1000 / svgRect.width),
+                    y: ((brandRect.top + brandRect.height / 2) - svgRect.top) * (500 / svgRect.height)
+                };
+            }
+        }
+
+        function selectCountry(countryElement) {
+            if (!selectedBrand || !selectedBrand.dataset || !anchorPoint || !connectionLine) return;
+
+            const brand = selectedBrand.dataset.brand;
+            const country = countryElement.dataset.country;
+
+            const countryRect = countryElement.getBoundingClientRect();
+            const svgRect = mapSvg.getBoundingClientRect();
+            const x2 = ((countryRect.left + countryRect.width / 2) - svgRect.left) * (1000 / svgRect.width);
+            const y2 = ((countryRect.top + countryRect.height / 2) - svgRect.top) * (500 / svgRect.height);
+
+            connectionLine.setAttribute('x1', anchorPoint.x);
+            connectionLine.setAttribute('y1', anchorPoint.y);
+            connectionLine.setAttribute('x2', x2);
+            connectionLine.setAttribute('y2', y2);
+            connectionLine.classList.add('draw');
+
+            const match = carData.find(item => item.brand === brand && item.country === country);
+            const logoImg = selectedBrand.querySelector('img.logo')?.cloneNode();
+            const feedbackSpan = selectedBrand.querySelector('.feedback');
+
+            if (match && logoImg) {
+                logoImg.title = brand;
+                if (incorrectBrands.has(brand)) {
+                    incorrectBrands.delete(brand);
+                    const incorrectImgs = incorrectMatches.querySelectorAll('img');
+                    for (let img of incorrectImgs) {
+                        if (img.alt === brand) {
+                            img.remove();
+                            break;
+                        }
+                    }
+                }
+                selectedBrand.classList.add('correct');
+                correctMatches.appendChild(logoImg);
+                score++;
+                scoreDisplay.textContent = `${translations[ttsLanguageSelect.value].score}: ${score}`;
+                triggerConfetti();
+
+                const selectedLang = ttsLanguageSelect.value;
+                const langKey = {
+                    'pl-PL': 'polish',
+                    'en-US': 'english',
+                    'es-ES': 'spanish',
+                    'fr-FR': 'french'
+                }[selectedLang];
+                const countryName = countryElement.dataset[langKey] || countryElement.dataset.english;
+                speak(countryName, selectedLang);
+
+                if (score === carData.length) {
+                    correctMatches.innerHTML = '<h2>😄</h2><p>Congratulations! You matched all possible brands correctly!</p>';
+                    triggerConfetti();
+                }
+            } else if (logoImg) {
+                logoImg.title = brand;
+                selectedBrand.classList.add('incorrect');
+                if (!incorrectBrands.has(brand)) {
+                    incorrectMatches.appendChild(logoImg);
+                    incorrectBrands.add(brand);
+                }
+                const correctCountry = carData.find(item => item.brand === brand).country;
+                const correctFlag = carData.find(item => item.brand === brand).flag;
+                if (feedbackSpan) {
+                    feedbackSpan.innerHTML = `from ${correctCountry} `;
+                    const flagImg = document.createElement('img');
+                    flagImg.src = correctFlag;
+                    flagImg.alt = correctCountry;
+                    flagImg.className = 'flag';
+                    feedbackSpan.appendChild(flagImg);
+                }
+                setTimeout(() => {
+                    if (selectedBrand) {
+                        selectedBrand.classList.remove('incorrect');
+                        if (feedbackSpan) feedbackSpan.innerHTML = '';
+                    }
+                }, 2000);
+            }
+
+            if (selectedBrand) {
+                selectedBrand.classList.remove('selected');
+            }
+            selectedBrand = null;
+            clearLine();
+        }
+
+        function resetGame() {
+            document.removeEventListener('mousemove', updateLineToCursor);
+            initializeGame();
+        }
+
+        ttsLanguageSelect.addEventListener('change', () => {
+            updateCountryLabels();
+            updateInterfaceText();
+        });
+
+        document.addEventListener('DOMContentLoaded', initializeGame);
+    </script>
+</body>
+</html>
